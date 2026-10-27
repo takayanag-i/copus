@@ -8,3 +8,12 @@ web,otel,1
 prose,wiki,0.5
 prose,mdn,1
 prose,otel,1
+ui,postgresql,1
+ui,kubernetes,1
+ui,python,1
+web,postgresql,1
+web,kubernetes,1
+web,python,1
+prose,postgresql,1
+prose,kubernetes,1
+prose,python,1

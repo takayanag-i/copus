@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 基本のコーパスを取得して作る: MDN・OpenTelemetry の日本語版 → <出力フォルダ>/mdn.txt・otel.txt と corpora.json
+# 基本のコーパスを取得して作る: MDN・OpenTelemetry・PostgreSQL・Kubernetes・Python の日本語版 → <出力フォルダ>/mdn.txt・otel.txt・postgresql.txt・kubernetes.txt・python.txt と corpora.json
 # 使い方: bash fetch_corpora.sh <出力フォルダ>   （ダウンロードは約 400MB。数分）
 # ドメイン固有のコーパスは、文書を取得してから build_corpus.py に --domain を付けて作る（README の「ドメイン固有のコーパス」）
 set -euo pipefail
@@ -16,3 +16,15 @@ if [ ! -d otel ]; then
 fi
 python3 -I "$HERE/build_corpus.py" mdn mdn/files/ja . --ext .md
 python3 -I "$HERE/build_corpus.py" otel otel/content/ja . --ext .md
+if [ ! -d pgsql ]; then
+  git clone -q --depth 1 --filter=blob:none --sparse https://github.com/pgsql-jp/jpug-doc.git pgsql
+  (cd pgsql && git sparse-checkout set doc/src/sgml)
+fi
+if [ ! -d k8s ]; then
+  git clone -q --depth 1 --filter=blob:none --sparse https://github.com/kubernetes/website.git k8s
+  (cd k8s && git sparse-checkout set content/ja)
+fi
+[ -d pydoc ] || git clone -q --depth 1 https://github.com/python/python-docs-ja.git pydoc
+python3 -I "$HERE/build_corpus.py" postgresql pgsql/doc/src/sgml . --ext .sgml
+python3 -I "$HERE/build_corpus.py" kubernetes k8s/content/ja . --ext .md
+python3 -I "$HERE/build_corpus.py" python pydoc . --ext .po --exclude '/\.git/'

@@ -1,10 +1,12 @@
 # 文書のフォルダから、1つのコーパスを作る
-# 使い方: python3 build_corpus.py <名前> <元のフォルダ> <コーパスのフォルダ> [--domain] [--ext .html,.md] [--exclude 正規表現]
+# 使い方: python3 build_corpus.py <名前> <元のフォルダ> <コーパスのフォルダ> [--domain] [--ext .html,.md,.sgml,.po] [--exclude 正規表現]
 #   <コーパスのフォルダ>/<名前>.txt に本文を書く。ページの区切りは改ページ文字（\f）
 #   <コーパスのフォルダ>/corpora.json に、種類（base か domain）・ページ数・日本語の文字数・元のフォルダを記録する
 #   --domain: ドメイン固有のコーパスとして登録する。corpus_count.py は --domain で名前を指定したときだけ数える
 #   HTML は <main>・<article>・role="main" の要素の中だけを本文とし、目次やナビゲーションを除く
 #   Markdown は先頭のフロントマターと {{ }} のマクロを除く
+#   SGML は <!-- --> のコメントとタグを除く。翻訳の原文がコメントに入っている文書に使う
+#   PO は msgstr の訳文だけを本文にする
 import os, re, sys, json, html, argparse
 
 JA = re.compile(r'[぀-ヿ一-鿿]')
@@ -33,6 +35,30 @@ def md_text(src):
     return src
 
 
+def sgml_text(src):
+    src = re.sub(r'(?s)<!--.*?-->', ' ', src)
+    return html.unescape(re.sub(r'<[^>]+>', ' ', src))
+
+
+def po_text(src):
+    out, cur = [], None
+    for line in src.splitlines():
+        if line.startswith('msgstr '):
+            cur = [line[7:]]
+        elif cur is not None and line.startswith('"'):
+            cur.append(line)
+        else:
+            if cur:
+                out.append(''.join(s.strip()[1:-1] for s in cur))
+            cur = None
+    if cur:
+        out.append(''.join(s.strip()[1:-1] for s in cur))
+    return '\n'.join(s.replace('\\n', ' ').replace('\\"', '"') for s in out if s)
+
+
+TEXT = {'.html': html_text, '.htm': html_text, '.sgml': sgml_text, '.po': po_text}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('name'); ap.add_argument('src'); ap.add_argument('out')
@@ -51,7 +77,7 @@ def main():
                 if not f.endswith(exts) or (skip and skip.search(path)):
                     continue
                 src = open(path, encoding='utf-8', errors='ignore').read()
-                t = html_text(src) if f.endswith(('.html', '.htm')) else md_text(src)
+                t = TEXT.get(os.path.splitext(f)[1], md_text)(src)
                 t = re.sub(r'[ \t\r]+', ' ', t)
                 t = re.sub(r'\n\s*\n+', '\n', t).replace('\f', ' ')
                 n = len(JA.findall(t))

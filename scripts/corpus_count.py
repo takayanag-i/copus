@@ -1,7 +1,7 @@
 # 句の使われ方をコーパスで数え、密度と加重シェアで比べる
 # 使い方: CORPUS_DIR=<フォルダ> python3 corpus_count.py [--context ui|web|prose] [--domain 名前[=重み] ...] [--min 10] [--k 10] 句 [句 ...]
 #         CORPUS_DIR=<フォルダ> python3 corpus_count.py --pairs pairs.tsv [同じオプション] > counts.tsv
-#   pairs.tsv: 1 行 1 組。1 列目は組の名前、2 列目以降は比べる句
+#   pairs.tsv: 1 行 1 組。1 列目は組の名前、2 列目以降は比べる句。1 つの列に 句|句 と並べると、件数を足して 1 つの句として比べる
 #   wiki: 日本語版 Wikipedia の全文検索 API で、その句（引用符で囲んだ完全一致）を含む記事の数。CORPUS_DIR/wiki_cache.json に残す
 #   ほかのコーパス: CORPUS_DIR/corpora.json に登録したもの（build_corpus.py で作る）。その句を含むページの数を数える
 #     種類が base のものはいつも数え、domain のものは --domain で名前を指定したときだけ数える
@@ -71,10 +71,11 @@ def load_weights(context, domains):
 
 
 def count(q, corpora):
-    total = wiki_articles(); n = wiki(q)
+    parts = q.split('|')
+    total = wiki_articles(); n = sum(wiki(x) for x in parts)
     out = {'wiki': {'件数': n, '密度': round(n / total * 1e6, 2)}}
     for name, c in corpora.items():
-        k = sum(1 for p in c['pages'] if q in p)
+        k = sum(1 for p in c['pages'] for x in parts if x in p)
         out[name] = {'件数': k, '密度': round(k / len(c['pages']) * 1e3, 2)}
     return out
 
