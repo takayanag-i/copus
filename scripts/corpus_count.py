@@ -1,13 +1,14 @@
 # 句の使われ方をコーパスで数え、密度と加重シェアで比べる
-# 使い方: CORPUS_DIR=<フォルダ> python3 corpus_count.py [--context ui|web|prose] [--domain 名前[=重み] ...] [--min 10] 句 [句 ...]
+# 使い方: CORPUS_DIR=<フォルダ> python3 corpus_count.py [--context ui|web|prose] [--domain 名前[=重み] ...] [--min 10] [--k 10] 句 [句 ...]
 #         CORPUS_DIR=<フォルダ> python3 corpus_count.py --pairs pairs.tsv [同じオプション] > counts.tsv
 #   pairs.tsv: 1 行 1 組。1 列目は組の名前、2 列目以降は比べる句
 #   wiki: 日本語版 Wikipedia の全文検索 API で、その句（引用符で囲んだ完全一致）を含む記事の数。CORPUS_DIR/wiki_cache.json に残す
 #   ほかのコーパス: CORPUS_DIR/corpora.json に登録したもの（build_corpus.py で作る）。その句を含むページの数を数える
 #     種類が base のものはいつも数え、domain のものは --domain で名前を指定したときだけ数える
 #   密度: wiki は 100 万記事あたりの記事数、ほかは 1,000 ページあたりのページ数
-#   加重シェア: 組の中で、コーパスごとに密度の割合を取り、文脈の重みで平均する。句を 1 つも含まないコーパスは平均に入れない
-#     重みは references/weights.csv（文脈,コーパス,重み）。ドメイン固有のコーパスの重みは --domain 名前=重み（省くと 1）
+#   加重シェア: 組の中で、コーパスごとに句の割合を取り、重みで平均する。句を 1 つも含まないコーパスは平均に入れない
+#     コーパスの重みは、文脈の重みに 件数/(件数+k) を掛けた値。件数はそのコーパスでの組の句の件数の合計
+#     文脈の重みは references/weights.csv（文脈,コーパス,重み）。ドメイン固有のコーパスの重みは --domain 名前=重み（省くと 2）
 #   根拠: 組の句すべての、全コーパスの記事数とページ数の合計。--min に満たない組は「少ない」と表示する
 import os, sys, json, time, argparse, urllib.request, urllib.parse
 
@@ -78,15 +79,12 @@ def count(q, corpora):
     return out
 
 
-def shares(group, weights):
+def shares(group, weights, k):
     names = list(next(iter(group.values())).keys())
-    used = [c for c in names if sum(group[q][c]['密度'] for q in group) > 0]
-    wsum = sum(weights.get(c, 0) for c in used)
-    res = {}
-    for q in group:
-        s = sum(weights.get(c, 0) * group[q][c]['密度'] / sum(group[x][c]['密度'] for x in group) for c in used)
-        res[q] = round(s / wsum, 3) if wsum else None
-    return res
+    n = {c: sum(group[q][c]['件数'] for q in group) for c in names}
+    w = {c: weights.get(c, 0) * n[c] / (n[c] + k) for c in names if n[c] > 0}
+    wsum = sum(w.values())
+    return {q: round(sum(w[c] * group[q][c]['件数'] / n[c] for c in w) / wsum, 3) if wsum else None for q in group}
 
 
 def main():
@@ -96,11 +94,12 @@ def main():
     ap.add_argument('--context', default='prose', choices=['ui', 'web', 'prose'])
     ap.add_argument('--domain', action='append', default=[])
     ap.add_argument('--min', type=int, default=10)
+    ap.add_argument('--k', type=float, default=10)
     a = ap.parse_args()
     domains = {}
     for d in a.domain:
         name, _, weight = d.partition('=')
-        domains[name] = float(weight) if weight else 1.0
+        domains[name] = float(weight) if weight else 2.0
     corpora = load_corpora(domains)
     weights = load_weights(a.context, domains)
     cols = ['wiki', *corpora]
@@ -115,7 +114,7 @@ def main():
     print('\t'.join(['組', '句', '加重シェア', '根拠', *[f'{c}_{k}' for c in cols for k in ('件数', '密度')]]))
     for name, qs in groups:
         group = {q: count(q, corpora) for q in qs}
-        sh = shares(group, weights)
+        sh = shares(group, weights, a.k)
         evidence = sum(group[q][c]['件数'] for q in qs for c in cols)
         mark = f'{evidence}' if evidence >= a.min else f'{evidence} 少ない'
         for q in qs:
